@@ -1,3 +1,0 @@
-This is a new file to be uploaded to a git hub repository.
-
-something new, something blue
