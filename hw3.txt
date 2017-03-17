@@ -52,3 +52,7 @@ salmon index --index yeast_orfs --type quasi --transcripts orf_coding.fasta.gz
  
  #Edit R Script in my igg directory and run the script
  Rscript --no-save ~/igg201B_2017/edge.R.yeast
+
+#The biological replicats WT strains are more distinct from each other.  In other words there is less variation between the biological replicates of the knockouts.
+#The technical replicates seem to be clustering well together based on the MDS plot.
+#Even with a more conservative FDR of 0.1 there are a TON of genese that appear significant between the WT and SNF mutants.  This makes a lot of sense because SNF is a transcription factor.  
