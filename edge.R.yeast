@@ -4,23 +4,25 @@ files <- c(
 "ERR458493.fastq.gz.quant.counts", #WT-1
 "ERR458494.fastq.gz.quant.counts", #WT-1
 "ERR458495.fastq.gz.quant.counts", #WT-1
+"ERR458878.fastq.gz.quant.counts", #WT-2
+"ERR458879.fastq.gz.quant.counts", #WT-2
 "ERR458500.fastq.gz.quant.counts", #SNF-1
 "ERR458501.fastq.gz.quant.counts", #SNF-1
 "ERR458502.fastq.gz.quant.counts", #SNF-1
+"ERR458507.fastq.gz.quant.counts", #SNF-2
 "ERR458508.fastq.gz.quant.counts", #SNF-2
-"ERR458878.fastq.gz.quant.counts", #WT-2
-"ERR458879.fastq.gz.quant.counts" #WT-2
+
 )
 
-labels=c("WT-1", "WT-1", "WT-1", "SNF-1", "SNF-1", "SNF-1", "SNF-2", "WT-2", "WT-2")
-
+labels=c("WT-1", "WT-1", "WT-1", "WT-2", "WT-2", "SNF-1", "SNF-1", "SNF-1", "SNF-2", "SNF-2")
+ 
 data <- readDGE(files)
 
 print(data)
 
 ###
 
-group <- c(rep("mut", 3), rep("wt", 3))
+group <- c(rep("wt", 5), rep("mut", 5))
 
 dge = DGEList(counts=data, group=group)
 dge <- estimateCommonDisp(dge)
@@ -36,7 +38,7 @@ plot(
   etp$table$logCPM,
   etp$table$logFC,
   xlim=c(-3, 20), ylim=c(-12, 12), pch=20, cex=.3,
-  col = ifelse( etp$table$FDR < .2, "red", "black" ) )
+  col = ifelse( etp$table$FDR < .1, "red", "black" ) )
 dev.off()
 
 # plot MDS
