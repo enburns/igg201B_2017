@@ -1,0 +1,308 @@
+---
+title: "MCT_Epi_study"
+author: "Erin Hales"
+date: "6/28/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+setwd("C:/Users/ErinHales/MAF Dropbox/GRLS/Data Team/Erin/MCT Epi study")
+library(dplyr)
+library(lubridate)  #lubridate package to change to ymd format
+library(eeptools)   #eeptools package age_calc function
+library(gmodels)
+library(ggpubr)
+#R version 4.1.0 (2021-05-18) -- "Camp Pontanezen"
+#both these rds files were created in the cohort exposure evaluation file - stored in the prep work directory
+dogs <- readRDS("Analysis_dogs.rds")
+MCT_dogs <- readRDS("MCT_dogs.rds")
+
+#This is the general demographic data that Julia has put together
+setwd("C:/Users/ErinHales/MAF Dropbox/GRLS/Data Team/General Data Sets/")
+general_data <- readRDS("alldata.RDS")
+
+#Get only the dogs I want to include from the General-data
+dogs <- left_join(dogs, general_data, by="DOGID")
+  #There are a lot of deceased and withdrawn dogs in here. Making follow up date 7/30/2021 because that is the most recent MCT diagnosis data I have. I need to remove dogs that were with
+```
+
+
+
+*dogs=all dogs in study*
+*MCT_dogs=info on LG-MCT affected dogs to include*
+```{r identify, include=FALSE}
+MCT_info <- subset(MCT_dogs, select = c("DOGID", "MCT"))
+dogs <- full_join(dogs, MCT_info, by="DOGID")
+dogs$MCT <- ifelse(is.na(dogs$MCT), "No", dogs$MCT)
+```
+
+## Sun Exposure
+
+```{r sun_read_in, include=FALSE}
+setwd("C:/Users/ErinHales/MAF Dropbox/GRLS/Data Team/Erin/data for Erin/2020-07-31/")
+OPA <- read.csv("OPA.csv")
+AOPA <- read.csv("AOPA.csv")
+A3OPA <- read.csv("A3OPA.csv")
+
+#variables of interests
+    #SUNDUR - LENGHT OF SUN EXPOSURE
+    #SUNEXP - FULL SHADE OR NO SHADE
+
+A3OPA_sub <- subset(A3OPA, select = c("DOGID", "PATST", "SEQUENCE", "FRSTLOCK", "SUNDUR", "SUNEXP"))
+OPA_sub <- subset(OPA, select = c("DOGID", "PATST", "SEQUENCE", "FRSTLOCK", "SUNDUR", "SUNEXP"))
+AOPA_sub <- subset(AOPA, select = c("DOGID", "PATST", "SEQUENCE", "FRSTLOCK", "SUNDUR", "SUNEXP"))
+setwd("C:/Users/ErinHales/MAF Dropbox/GRLS/Data Team/Erin/MCT Epi study")
+
+sun_all_data <- A3OPA_sub %>%
+          full_join(OPA_sub) %>%
+          full_join(AOPA_sub)
+
+rm(A3OPA, A3OPA_sub, OPA, OPA_sub, AOPA, AOPA_sub)
+```
+
+Now the sun exposure needs to be put into the 1-4 numeric categories and limited to be <4 years of age. I also need a data frame for exactly 2 years of data for all the dogs. The oldest two survey dates younger than 4
+
+Plan: 
+      subset sun data to only dogs being used in the study
+      calculate age at survey completion for all data
+      subset sun data to age<=4 years
+      make sun variable numeric
+
+```{r sun_cleaning, include=FALSE}
+#subset to only used dogs
+sun_study_dogs <- semi_join(sun_all_data, dogs, by="DOGID")
+
+#-------
+#Goal: calculate age at survey completion for all data
+#Need to incorporate DOB into Sun_study_dogs then calculate age at completion using the FRSTLOCK variable.
+  #both variables will need to be in the right format 
+sun_study_dogs$FRSTLOCK <- parse_date_time(sun_study_dogs$FRSTLOCK,"%m/%d/%Y %I:%M:%S %p")
+sun_study_dogs$FRSTLOCK <- as.Date(sun_study_dogs$FRSTLOCK)
+#subset DOB from general data so not all rows are joined
+general_DOB <- subset(general_data, select=c("DOGID", "DOBfmt"))
+sun_study_dogs <- left_join(sun_study_dogs, general_DOB, by="DOGID")
+sun_study_dogs$age <- round(age_calc(sun_study_dogs$DOBfmt, enddate=sun_study_dogs$FRSTLOCK,
+                               units="years", precise=T),2)
+rm(general_DOB)
+#------
+#Goal: only sun data <=4 years of age
+sun_data_4dwn <- subset(sun_study_dogs, sun_study_dogs$age<=4)
+
+##Note: when I go to do 2 years of data per dog I need to sort by study year and then figure out a way to keep 2 duplicates of DOGID. 
+#---
+#Goal: Make sun data numeric
+  #Categorical numbers or hours
+
+attach(sun_data_4dwn)
+sun_data_4dwn <- sun_data_4dwn %>% 
+  mutate(
+    SUN.CATGRY=with(., case_when(
+      SUNDUR=="Less than 3 hours" ~ 1,
+      SUNDUR=="Between 3-8 hours" ~ 2,
+      SUNDUR=="Between 8-16 hours" ~ 3,
+      SUNDUR=="Between 9-16 hours" ~ 3,
+      SUNDUR=="More than 16 hours" ~ 4,
+      SUNDUR=="" ~ 0)))
+sun_data_4dwn <- sun_data_4dwn %>% 
+  mutate(
+    SUN.HRS=with(., case_when(
+      SUNDUR=="Less than 3 hours" ~ 1.5,
+      SUNDUR=="Between 3-8 hours" ~ 5.5,
+      SUNDUR=="Between 8-16 hours" ~ 12.5,
+      SUNDUR=="Between 9-16 hours" ~ 12.5,
+      SUNDUR=="More than 16 hours" ~ 16,
+      SUNDUR=="" ~ 0)))
+detach(sun_data_4dwn)
+rm(sun_all_data, sun_study_dogs)
+
+#------
+#deal with sun exposure (shade access)
+sun_data_4dwn$SUNEXP <- as.factor(sun_data_4dwn$SUNEXP)
+
+#----
+#Add MCT diagnosis status to the data.frame
+dogs_mct <- subset(dogs, select=c("DOGID", "SEX", "MCT", "FIXAGE", "FIXAGEcat", "FIXDTfmt"))
+sun_data_4dwn <- left_join(sun_data_4dwn, dogs_mct, by="DOGID")
+
+#----
+#Getting just 2 years of data per dog
+  #Idea, subset for the oldest year through ordering by age, then antijoin, then subest for oldest year again and then join the two resulting data frames. I CAN'T BELEIVE THIS WORKED BUT IT DID. I'm also sure there is a shorter way to do this but I could make sense of this and therefore it works.
+sun_old_filtering <- sun_data_4dwn[order(sun_data_4dwn$age, decreasing=T),]
+sun_old_year <- sun_old_filtering[!duplicated(sun_old_filtering$DOGID),]
+sun_young_filtering <- anti_join(sun_old_filtering, sun_old_year)
+sun_young_filtering <- sun_young_filtering[order(sun_young_filtering$age, decreasing=T),]
+sun_young_year <- sun_young_filtering[!duplicated(sun_young_filtering$DOGID),]
+sun_data_2yrs <- full_join(sun_old_year, sun_young_year)
+rm(sun_old_filtering, sun_old_year, sun_young_filtering, sun_young_year)
+sun_data_2yrs$SUN.HRS.YEAR <- sun_data_2yrs$SUN.HRS*365
+```
+
+Well, now I have usable variables....its time to see if they mean anything in the context of our study population
+
+Explore sun variables as:
+  1) Average exposure category using sun_data_4dwn
+      categorical and continuous
+  2) Mode of exposure category using sun_data_4dwn
+  3) Approximation of total hours using sun_data_2yrs
+  4) Baseline exposure category using sun_data_4dwn 
+  5) Baseline exposure hours using sun_data_4dwn
+  
+```{r sun_exposure_explore, include=FALSE}
+#summarize each of the needed variables
+#----
+attach(sun_data_4dwn)
+getmode <- function(v) {
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+sun_cat <- sun_data_4dwn %>%
+  group_by(DOGID) %>%
+  summarise(SUN_CAT_AVG=round(mean(SUN.CATGRY)),  #1 - avg exposure cat
+            SUN_CAT_MODE=getmode(SUN.CATGRY)  #2 - mode exposure cat
+            )
+detach(sun_data_4dwn)
+
+    #3 - total sun hours
+attach(sun_data_2yrs)
+sun_hrs_total <- sun_data_2yrs %>%
+  group_by(DOGID) %>%
+  summarise(SUN_HRS_TOT=round(sum(SUN.HRS.YEAR)))
+detach(sun_data_2yrs)
+
+    #4 - baseline category
+base_cat <- subset(sun_data_4dwn, sun_data_4dwn$SEQUENCE==0, 
+                   select=c("DOGID", "SUN.CATGRY"))
+colnames(base_cat) <- c("DOGID", "BASE_SUN_CAT")
+
+    #5 - baseline hours
+base_hours <- subset(sun_data_4dwn, sun_data_4dwn$SEQUENCE==0,
+                     select=c("DOGID", "SUN.HRS"))
+colnames(base_hours) <- c("DOGID", "BASE_SUN_HRS")
+
+  #6 average hours per day
+attach(sun_data_4dwn)
+sun_hrs_avg <- sun_data_2yrs %>%
+  group_by(DOGID) %>%
+  summarise(SUN_HRS_AVG=mean(SUN.HRS))
+detach(sun_data_4dwn)
+
+sun_summary <- left_join(sun_cat, sun_hrs_total, by="DOGID") %>%
+               left_join(base_cat, by="DOGID") %>%
+               left_join(base_hours, by="DOGID") %>%
+               left_join(sun_hrs_avg, by="DOGID") %>%
+               left_join(dogs_mct, by="DOGID")
+rm(sun_cat, sun_hrs_total, base_cat, base_hours, sun_hrs_avg)
+
+sun_MCT_positive <- subset(sun_summary, sun_summary$MCT=="Yes")
+sun_MCT_negative <- subset(sun_summary, sun_summary$MCT=="No")
+#-----
+#next to test average exposure category
+    #step 1 normality and step 2 if there is a difference between the MCT groups
+
+hist(sun_summary$SUN_CAT_AVG) #looks very skewed, long right tail and heavy on the left
+ggqqplot(sun_summary$SUN_CAT_AVG, title="qqplot of sun_summary$SUN_CAT_AVG") #variable to round to whole numbers made this very much a categorical variable.
+ggplot(sun_summary, aes(SUN_CAT_AVG)) + geom_bar(aes(fill=MCT)) + theme_classic()
+CrossTable(sun_summary$SUN_CAT_AVG, sun_summary$MCT, fisher = T, prop.r = F, prop.c = T,
+           prop.chisq = F, prop.t = F)
+
+#-----
+  #next to test mode of exposure category
+hist(sun_summary$SUN_CAT_MODE)
+ggplot(sun_summary, aes(SUN_CAT_MODE)) + geom_bar(aes(fill=MCT)) + theme_classic() #not looking good
+
+CrossTable(sun_summary$SUN_CAT_MODE, sun_summary$MCT, fisher = T, prop.r = F, prop.c = T,
+           prop.chisq = F, prop.t = F)
+
+#-----
+  #next sum of total hours over 2 years SUN_HRS_TOT
+hist(sun_summary$SUN_HRS_TOT) #looks very categorical
+ggqqplot(sun_summary$SUN_HRS_TOT, title="qqplot of sun_summary$SUN_HRS_AVG") #Yuck again. Still looks categorical
+
+shapiro.test(sun_summary$SUN_HRS_TOT)
+
+median(sun_MCT_negative$SUN_HRS_TOT)
+min(sun_MCT_negative$SUN_HRS_TOT)
+max(sun_MCT_negative$SUN_HRS_TOT)
+
+median(sun_MCT_positive$SUN_HRS_TOT)
+min(sun_MCT_positive$SUN_HRS_TOT)
+max(sun_MCT_positive$SUN_HRS_TOT)
+
+wilcox.test(SUN_HRS_TOT~MCT, data=sun_summary, conf.int=T)
+
+#----
+  # next is the baseline exposure category
+ggplot(sun_summary, aes(BASE_SUN_CAT)) + geom_bar(aes(fill=MCT)) + theme_classic() #No obvious difference in distribution
+CrossTable(sun_summary$BASE_SUN_CAT, sun_summary$MCT, fisher = T, prop.r = F, prop.c = T,
+           prop.chisq = F, prop.t = F)
+
+
+#----
+  #Next is baseline exposure hours
+hist(sun_summary$BASE_SUN_HRS) #looks like 4 categories - because it is!!! not sure what I was thinking but this is really no different than the exposure categories because there is no averaging
+ggqqplot(sun_summary$BASE_SUN_HRS, title="qqplot of sun_summary$BASE_SUN_HRS") #Yuck again. Still looks categorical
+ggplot(sun_summary, aes(BASE_SUN_HRS)) + geom_bar(aes(fill=MCT)) + theme_classic() #No obvious difference in distribution
+CrossTable(sun_summary$BASE_SUN_HRS, sun_summary$MCT, fisher = T, prop.r = F, prop.c = T,
+           prop.chisq = F, prop.t = F)
+
+#-----
+  #next is hours of sun/day averaged for all data <4 years
+hist(sun_summary$SUN_HRS_AVG) #looks kind of categorical, but with 9 categories
+ggqqplot(sun_summary$SUN_HRS_AVG, title="qqplot of sun_summary$SUN_HRS_AVG")
+shapiro.test(sun_summary$SUN_HRS_AVG)
+
+median(sun_MCT_negative$SUN_HRS_AVG)
+min(sun_MCT_negative$SUN_HRS_AVG)
+max(sun_MCT_negative$SUN_HRS_AVG)
+
+median(sun_MCT_positive$SUN_HRS_AVG)
+min(sun_MCT_positive$SUN_HRS_AVG)
+max(sun_MCT_positive$SUN_HRS_AVG)
+
+wilcox.test(SUN_HRS_AVG~MCT, data=sun_summary, conf.int=T)
+  #made a table to round this to the nearest hour....not very helpful as we still have 9 categories and not a continuous variable.
+```
+
+Next up is shade access - the two options are Access to full shade and No access to full shade.
+I am leery if this will be indicative of any true radiation expose as the dog has to choose to sit in the shade or sun and not all dogs will use shade even if its available.
+
+```{r sun_shade_explore, include=FALSE}
+sun_shade_4dwn <- subset(sun_data_4dwn, select=c("DOGID", "SEQUENCE", "SUNEXP"))
+  #make the two shade summary variables
+attach(sun_shade_4dwn)
+shade_mode <- sun_shade_4dwn %>%
+  group_by(DOGID) %>%
+  summarise(SHADE_MODE=getmode(SUNEXP))  #1 - mode shade category)
+detach(sun_shade_4dwn)
+
+shade_base <- sun_shade_4dwn[sun_shade_4dwn$SEQUENCE==0, c(1,3)]
+colnames(shade_base) <- c("DOGID", "SHADE_BASE")
+
+#add shade summary to sun summary
+sun_summary <- sun_summary %>%
+  full_join(shade_mode, by="DOGID") %>%
+  full_join(shade_base, by="DOGID")
+
+sun_MCT_positive <- subset(sun_summary, sun_summary$MCT=="Yes")
+sun_MCT_negative <- subset(sun_summary, sun_summary$MCT=="No")
+
+#Quick table of MCT vs both variables I just built shows that the base answer has more variability in the control group but the numbers are the same between the two variables for the MCT affected group.
+
+#Shade Mode
+shade_mode <- table(sun_summary$MCT, sun_summary$SHADE_MODE)
+
+ggplot(sun_summary, aes(SHADE_MODE)) + geom_bar(aes(fill=MCT)) + theme_classic()
+CrossTable(sun_summary$SHADE_MODE, sun_summary$MCT, fisher = T, prop.r = F, prop.c = T,
+           prop.chisq = F, prop.t = F)
+
+#Shade Baseline answer
+shade_base <- table(sun_summary$MCT, sun_summary$SHADE_BASE)
+
+ggplot(sun_summary, aes(SHADE_BASE)) + geom_bar(aes(fill=MCT)) + theme_classic()
+CrossTable(sun_summary$SHADE_BASE, sun_summary$MCT, fisher = T, prop.r = F, prop.c = T,
+           prop.chisq = F, prop.t = F)
+
+```
